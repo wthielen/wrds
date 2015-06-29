@@ -1,0 +1,10 @@
+Package: wrds
+Type: Package
+Title: WRDS CRSP/Compustat Merged Interface
+Version: 0.1
+Date: 2015-06-29
+Author: Wouter Thielen
+Maintainer: Wouter Thielen <wthielen@uw.edu>
+Description: A package that acts as a user-friendly interface to CRSP/Compustat Merged data from the Wharton Research Data Services.
+License: BSD 2-Clause
+LazyData: TRUE
