@@ -18,7 +18,7 @@
 #' cl <- wrdsClient()
 wrdsClient <- function(username = NULL, password = NULL) {
     if (!('package:RJDBC' %in% search() || require('RJDBC', quiet=TRUE))) {
-        stop("Package RJDBC can not be loaded")
+        stop("Package RJDBC could not be loaded")
     }
 
     sasPath <- getOption("wrds.sasPath")
@@ -33,15 +33,15 @@ wrdsClient <- function(username = NULL, password = NULL) {
         stop(paste("SAS driver", sasDriver, "not found!"))
     }
 
-    .jaddClassPath(sasCore)
-    .jaddClassPath(sasDriver)
+    .jaddClassPath(c(sasCore, sasDriver))
 
     driver <- RJDBC::JDBC("com.sas.net.sharenet.ShareNetDriver", sasDriver, identifier.quote="`")
 
     username <- ifelse(is.null(username), getOption("wrds.username"), username)
     password <- ifelse(is.null(password), getOption("wrds.password"), password)
 
-    client <- DBI::dbConnect(driver, "jdbc:sharenet://wrds-cloud.wharton.upenn.edu:4016/", username, password)
+    client <- RJDBC::dbConnect(driver, "jdbc:sharenet://wrds-cloud.wharton.upenn.edu:8551/", username, password)
+
     client
 }
 
