@@ -7,6 +7,10 @@
 #   Build and Reload Package:  'Ctrl + Shift + B'
 #   Check Package:             'Ctrl + Shift + E'
 #   Test Package:              'Ctrl + Shift + T'
+#
+# Other documentation regarding OOP in R:
+# ReferenceClasses: http://www.inside-r.org/r-doc/methods/ReferenceClasses
+# StackOverflow: http://stackoverflow.com/questions/9521651/r-and-object-oriented-programming
 
 #' Create a client connection to WRDS
 #'
@@ -71,34 +75,66 @@ wrdsSASPath <- function(path) {
     options(wrds.sasPath = path)
 }
 
-#' Updates the master and link tables in the SQLite database
-#' Pass it the filename of the results file, and it will split the data and import them
-#' into SQLite.
-#' The filename is expected to be in tab-separated format.
-#' Maybe other formats can be detected and added later on.
-#' @param filename The name of the results file from WRDS cloud
+# wrdsUpdateLink <- function(filename) {
+#     # Reading in the given results file
+#     linkdata = read.csv(filename, sep="\t", quote="")
+#
+#     wrdsdb = .wrdsGetDb()
+#
+#     # Splitting data in a master part, and the link information part
+#     master.data = subset(linkdata, select=-c(LINKPRIM, LIID, LINKTYPE, LPERMNO, LPERMCO, LINKDT, LINKENDDT))
+#     link.data = subset(linkdata, select=c(gvkey, LINKPRIM, LIID, LINKTYPE, LPERMNO, LPERMCO, LINKDT, LINKENDDT))
+#
+#     # Making the data in the master.data unique
+#     master.data = unique(master.data)
+#     dbWriteTable(wrdsdb, "master", master.data, overwrite=TRUE)
+#
+#     # Convert dates to YYYY-MM-DD. SQLite via R does not have any native datetype fields, so as long
+#     # as they are kept in YYYY-MM-DD format, comparisons will work fine.
+#     link.data[link.data$LINKENDDT == "E", ]$LINKENDDT = NA
+#     link.data$LINKDT = as.character(as.Date(as.character(link.data$LINKDT), format="%Y%m%d"))
+#     link.data$LINKENDDT = as.character(as.Date(as.character(link.data$LINKENDDT), format="%Y%m%d"))
+#     dbWriteTable(wrdsdb, "link", link.data, overwrite=TRUE)
+#
+#     # Maybe update the field properties (primary key, indexing, etc) for faster access
+# }
+
+#' Updates the link table in the SQLite database
+#' It runs a SQL command on the WRDS cloud, fetches the data, and puts that data in the
+#' SQLite database, in the "link" table
+#' @param conn The WRDS cloud connection obtained with wrdsClient()
 #' @examples
-#' wrdsUpdateLink("Gvkey2Permno.txt")
-wrdsUpdateLink <- function(filename) {
-    # Reading in the given results file
-    linkdata = read.csv(filename, sep="\t", quote="")
+#' cl <- wrdsClient()
+#' wrdsUpdateTables(cl)
+wrdsUpdateTables <- function(conn) {
+    localdb = .wrdsGetDb()
 
-    wrdsdb = .wrdsGetDb()
+    mapper <- list(
+        master = "COMPMASTER",
+        head = "COMPHEAD",
+#        hist = "COMPHIST",
+        link = "CCMXPF_LNKHIST"
+    )
 
-    # Splitting data in a master part, and the link information part
-    master.data = subset(linkdata, select=-c(LINKPRIM, LIID, LINKTYPE, LPERMNO, LPERMCO, LINKDT, LINKENDDT))
-    link.data = subset(linkdata, select=c(gvkey, LINKPRIM, LIID, LINKTYPE, LPERMNO, LPERMCO, LINKDT, LINKENDDT))
+    batchSize <- 1e5
 
-    # Making the data in the master.data unique
-    master.data = unique(master.data)
-    dbWriteTable(wrdsdb, "master", master.data, overwrite=TRUE)
+    df <- data.frame(mapper)
+    cols <- colnames(df)
+    for(i in 1:length(cols)) {
+        if (DBI::dbExistsTable(localdb, cols[i])) DBI::dbRemoveTable(localdb, cols[i])
 
-    # Convert dates to YYYY-MM-DD. SQLite via R does not have any native datetype fields, so as long
-    # as they are kept in YYYY-MM-DD format, comparisons will work fine.
-    link.data[link.data$LINKENDDT == "E", ]$LINKENDDT = NA
-    link.data$LINKDT = as.character(as.Date(as.character(link.data$LINKDT), format="%Y%m%d"))
-    link.data$LINKENDDT = as.character(as.Date(as.character(link.data$LINKENDDT), format="%Y%m%d"))
-    dbWriteTable(wrdsdb, "link", link.data, overwrite=TRUE)
+        j = 1;
+        message(paste("Querying WRDS for", cols[i], "data"))
+        res <- DBI::dbSendQuery(conn, paste0("SELECT * FROM CRSP.", df[1, i]))
+        while(TRUE) {
+            message(paste("...", as.integer(j * batchSize)))
+            data <- fetch(res, n=batchSize)
+            if (nrow(data) == 0) break;
 
-    # Maybe update the field properties (primary key, indexing, etc) for faster access
+            DBI::dbWriteTable(localdb, cols[i], data, append=TRUE)
+            j = j + 1
+        }
+
+        DBI::dbClearResult(res)
+    }
 }
