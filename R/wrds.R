@@ -70,3 +70,35 @@ wrdsSASPath <- function(path) {
 
     options(wrds.sasPath = path)
 }
+
+#' Updates the master and link tables in the SQLite database
+#' Pass it the filename of the results file, and it will split the data and import them
+#' into SQLite.
+#' The filename is expected to be in tab-separated format.
+#' Maybe other formats can be detected and added later on.
+#' @param filename The name of the results file from WRDS cloud
+#' @examples
+#' wrdsUpdateLink("Gvkey2Permno.txt")
+wrdsUpdateLink <- function(filename) {
+    # Reading in the given results file
+    linkdata = read.csv(filename, sep="\t", quote="")
+
+    wrdsdb = .wrdsGetDb()
+
+    # Splitting data in a master part, and the link information part
+    master.data = subset(linkdata, select=-c(LINKPRIM, LIID, LINKTYPE, LPERMNO, LPERMCO, LINKDT, LINKENDDT))
+    link.data = subset(linkdata, select=c(gvkey, LINKPRIM, LIID, LINKTYPE, LPERMNO, LPERMCO, LINKDT, LINKENDDT))
+
+    # Making the data in the master.data unique
+    master.data = unique(master.data)
+    dbWriteTable(wrdsdb, "master", master.data, overwrite=TRUE)
+
+    # Convert dates to YYYY-MM-DD. SQLite via R does not have any native datetype fields, so as long
+    # as they are kept in YYYY-MM-DD format, comparisons will work fine.
+    link.data[link.data$LINKENDDT == "E", ]$LINKENDDT = NA
+    link.data$LINKDT = as.character(as.Date(as.character(link.data$LINKDT), format="%Y%m%d"))
+    link.data$LINKENDDT = as.character(as.Date(as.character(link.data$LINKENDDT), format="%Y%m%d"))
+    dbWriteTable(wrdsdb, "link", link.data, overwrite=TRUE)
+
+    # Maybe update the field properties (primary key, indexing, etc) for faster access
+}
