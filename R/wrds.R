@@ -99,9 +99,9 @@ wrdsSASPath <- function(path) {
 #     # Maybe update the field properties (primary key, indexing, etc) for faster access
 # }
 
-#' Updates the link table in the SQLite database
-#' It runs a SQL command on the WRDS cloud, fetches the data, and puts that data in the
-#' SQLite database, in the "link" table
+#' Updates the base tables in the SQLite database
+#' It runs SQL commands on the WRDS cloud, fetches the data, and puts that data in their
+#' respective SQLite tables.
 #' @param conn The WRDS cloud connection obtained with wrdsClient()
 #' @examples
 #' cl <- wrdsClient()

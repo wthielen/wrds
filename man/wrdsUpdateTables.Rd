@@ -2,9 +2,9 @@
 % Please edit documentation in R/wrds.R
 \name{wrdsUpdateTables}
 \alias{wrdsUpdateTables}
-\title{Updates the link table in the SQLite database
-It runs a SQL command on the WRDS cloud, fetches the data, and puts that data in the
-SQLite database, in the "link" table}
+\title{Updates the base tables in the SQLite database
+It runs SQL commands on the WRDS cloud, fetches the data, and puts that data in their
+respective SQLite tables.}
 \usage{
 wrdsUpdateTables(conn)
 }
@@ -12,9 +12,9 @@ wrdsUpdateTables(conn)
 \item{conn}{The WRDS cloud connection obtained with wrdsClient()}
 }
 \description{
-Updates the link table in the SQLite database
-It runs a SQL command on the WRDS cloud, fetches the data, and puts that data in the
-SQLite database, in the "link" table
+Updates the base tables in the SQLite database
+It runs SQL commands on the WRDS cloud, fetches the data, and puts that data in their
+respective SQLite tables.
 }
 \examples{
 cl <- wrdsClient()
