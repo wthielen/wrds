@@ -5,6 +5,7 @@ Version: 0.1
 Date: 2015-06-29
 Author: Wouter Thielen
 Maintainer: Wouter Thielen <wthielen@uw.edu>
+Depends: RJDBC(>= 0.2)
 Description: A package that acts as a user-friendly interface to CRSP/Compustat Merged data from the Wharton Research Data Services.
 License: BSD 2-Clause
 LazyData: TRUE

@@ -12,6 +12,10 @@
 # ReferenceClasses: http://www.inside-r.org/r-doc/methods/ReferenceClasses
 # StackOverflow: http://stackoverflow.com/questions/9521651/r-and-object-oriented-programming
 
+.onLoad <- function(libname, pkgname) {
+    .jpackage(pkgname, lib.loc=libname)
+}
+
 #' Create a client connection to WRDS
 #'
 #' @param username Username. Don't pass to use stored username.
@@ -21,10 +25,6 @@
 #' cl <- wrdsClient("wrdsUser", "xyz123")
 #' cl <- wrdsClient()
 wrdsClient <- function(username = NULL, password = NULL) {
-    if (!('package:RJDBC' %in% search() || require('RJDBC', quiet=TRUE))) {
-        stop("Package RJDBC could not be loaded")
-    }
-
     sasPath <- getOption("wrds.sasPath")
 
     if (is.null(sasPath)) {
@@ -37,7 +37,6 @@ wrdsClient <- function(username = NULL, password = NULL) {
         stop(paste("SAS driver", sasDriver, "not found!"))
     }
 
-    .jpackage()
     .jaddClassPath(c(sasCore, sasDriver))
 
     driver <- RJDBC::JDBC("com.sas.net.sharenet.ShareNetDriver", sasDriver, identifier.quote="`")
