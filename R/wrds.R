@@ -37,6 +37,7 @@ wrdsClient <- function(username = NULL, password = NULL) {
         stop(paste("SAS driver", sasDriver, "not found!"))
     }
 
+    .jpackage()
     .jaddClassPath(c(sasCore, sasDriver))
 
     driver <- RJDBC::JDBC("com.sas.net.sharenet.ShareNetDriver", sasDriver, identifier.quote="`")
