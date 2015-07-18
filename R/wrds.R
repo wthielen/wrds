@@ -112,12 +112,17 @@ wrdsUpdateTables <- function(conn) {
     mapper <- list(
         master = "COMPMASTER",
         head = "COMPHEAD",
-#        hist = "COMPHIST",
+        sp500 = "MSP500LIST",
         link = "CCMXPF_LNKHIST"
+    )
+
+    partial <- list(
+        hist = "COMPHIST"
     )
 
     batchSize <- 1e5
 
+    ## Download main tables defined in mapper variable
     df <- data.frame(mapper)
     cols <- colnames(df)
     for(i in 1:length(cols)) {
@@ -126,6 +131,33 @@ wrdsUpdateTables <- function(conn) {
         j = 1;
         message(paste("Querying WRDS for", cols[i], "data"))
         res <- DBI::dbSendQuery(conn, paste0("SELECT * FROM CRSP.", df[1, i]))
+        while(TRUE) {
+            message(paste("...", as.integer(j * batchSize)))
+            data <- fetch(res, n=batchSize)
+            if (nrow(data) == 0) break;
+
+            DBI::dbWriteTable(localdb, cols[i], data, append=TRUE)
+            j = j + 1
+        }
+
+        DBI::dbClearResult(res)
+    }
+
+    ## Collect GVKEYs of S&P500 constituents
+    res <- DBI::dbSendQuery(localdb, "SELECT DISTINCT GVKEY FROM link INNER JOIN sp500 ON link.LPERMNO=sp500.PERMNO")
+    gvkey <- fetch(res, n=-1)
+
+    ## Partially download some tables defined in partial variable
+    ## Use S&P500 constituents as the partial
+    df <- data.frame(partial)
+    cols <- colnames(df)
+    for(i in 1:length(cols)) {
+        if (DBI::dbExistsTable(localdb, cols[i])) DBI::dbRemoveTable(localdb, cols[i])
+
+        j = 1;
+        message(paste("Querying WRDS for", cols[i], "data for S&P500 constituents"))
+        sql <- paste0("SELECT * FROM CRSP.", df[1, i], " WHERE GVKEY IN ('", paste0(gvkey[, 1], collapse="', '"), "')")
+        res <- DBI::dbSendQuery(conn, sql)
         while(TRUE) {
             message(paste("...", as.integer(j * batchSize)))
             data <- fetch(res, n=batchSize)
