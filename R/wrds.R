@@ -75,98 +75,96 @@ wrdsSASPath <- function(path) {
     options(wrds.sasPath = path)
 }
 
-# wrdsUpdateLink <- function(filename) {
-#     # Reading in the given results file
-#     linkdata = read.csv(filename, sep="\t", quote="")
-#
-#     wrdsdb = .wrdsGetDb()
-#
-#     # Splitting data in a master part, and the link information part
-#     master.data = subset(linkdata, select=-c(LINKPRIM, LIID, LINKTYPE, LPERMNO, LPERMCO, LINKDT, LINKENDDT))
-#     link.data = subset(linkdata, select=c(gvkey, LINKPRIM, LIID, LINKTYPE, LPERMNO, LPERMCO, LINKDT, LINKENDDT))
-#
-#     # Making the data in the master.data unique
-#     master.data = unique(master.data)
-#     dbWriteTable(wrdsdb, "master", master.data, overwrite=TRUE)
-#
-#     # Convert dates to YYYY-MM-DD. SQLite via R does not have any native datetype fields, so as long
-#     # as they are kept in YYYY-MM-DD format, comparisons will work fine.
-#     link.data[link.data$LINKENDDT == "E", ]$LINKENDDT = NA
-#     link.data$LINKDT = as.character(as.Date(as.character(link.data$LINKDT), format="%Y%m%d"))
-#     link.data$LINKENDDT = as.character(as.Date(as.character(link.data$LINKENDDT), format="%Y%m%d"))
-#     dbWriteTable(wrdsdb, "link", link.data, overwrite=TRUE)
-#
-#     # Maybe update the field properties (primary key, indexing, etc) for faster access
-# }
-
-#' Updates the base tables in the SQLite database
-#' It runs SQL commands on the WRDS cloud, fetches the data, and puts that data in their
-#' respective SQLite tables.
+#' Synchronizes the base tables in the SQLite database
+#' This is going to be the basic function to initialize the database for
+#' the common WRDS working environment
+#' TODO Needs discussion what to include
 #' @param conn The WRDS cloud connection obtained with wrdsClient()
 #' @examples
 #' cl <- wrdsClient()
-#' wrdsUpdateTables(cl)
-wrdsUpdateTables <- function(conn) {
+#' wrdsSyncTables(cl)
+wrdsSyncTables <- function(conn) {
     localdb = .wrdsGetDb()
 
-    mapper <- list(
-        master = "COMPMASTER",
-        head = "COMPHEAD",
-        sp500 = "MSP500LIST",
-        link = "CCMXPF_LNKHIST"
+    ## Download main tables
+    tables <- c(
+        "COMPMASTER", "COMPHEAD", "MSP500LIST", "MSP500", "CCMXPF_LNKHIST"
     )
+    wrdsUpdateTable(conn, tables)
 
-    partial <- list(
-        hist = "COMPHIST"
-    )
 
-    batchSize <- 1e5
+    ## Get SP500 GVKEYs and use them to update the COMPHIST table
+    gvkeys <- wrdsGetSP500Gvkeys()
+    wrdsUpdateTable(conn, "COMPHIST", gvkeys=gvkeys)
+}
 
-    ## Download main tables defined in mapper variable
-    df <- data.frame(mapper)
-    cols <- colnames(df)
-    for(i in 1:length(cols)) {
-        if (DBI::dbExistsTable(localdb, cols[i])) DBI::dbRemoveTable(localdb, cols[i])
-
-        j = 1;
-        message(paste("Querying WRDS for", cols[i], "data"))
-        res <- DBI::dbSendQuery(conn, paste0("SELECT * FROM CRSP.", df[1, i]))
-        while(TRUE) {
-            message(paste("...", as.integer(j * batchSize)))
-            data <- fetch(res, n=batchSize)
-            if (nrow(data) == 0) break;
-
-            DBI::dbWriteTable(localdb, cols[i], data, append=TRUE)
-            j = j + 1
-        }
-
-        DBI::dbClearResult(res)
+#' Updates the given WRDS tables, optionally with the given subsets of
+#' GVKEYs or PERMNOs. You can not use both GVKEYs and PERMNOs to filter
+#' on, so make sure to use only one of the parameters.
+#' This function sends a SQL query to the WRDS cloud, receives the results
+#' and puts the results in the local database.
+#' TODO Allow incremental updates?
+#' @param conn The WRDS connection object
+#' @param tables A vector of table names to update
+#' @param gvkeys A vector of GVKEYs to filter on
+#' @param permnos A vector of PERMNOs to filter on
+wrdsUpdateTable <- function(conn, tables, gvkeys=c(), permnos=c()) {
+    ## Checking options
+    if (length(gvkeys) > 0 && length(permnos) > 0) {
+        stop("Can not use both gvkeys and permnos to filter")
     }
 
-    ## Collect GVKEYs of S&P500 constituents
-    res <- DBI::dbSendQuery(localdb, "SELECT DISTINCT GVKEY FROM link INNER JOIN sp500 ON link.LPERMNO=sp500.PERMNO")
-    gvkey <- fetch(res, n=-1)
+    localdb <- .wrdsGetDb()
 
-    ## Partially download some tables defined in partial variable
-    ## Use S&P500 constituents as the partial
-    df <- data.frame(partial)
-    cols <- colnames(df)
-    for(i in 1:length(cols)) {
-        if (DBI::dbExistsTable(localdb, cols[i])) DBI::dbRemoveTable(localdb, cols[i])
+    batchSize <- 1e5
+    for(table in tables) {
+        if (DBI::dbExistsTable(localdb, table)) DBI::dbRemoveTable(localdb, table)
 
         j = 1;
-        message(paste("Querying WRDS for", cols[i], "data for S&P500 constituents"))
-        sql <- paste0("SELECT * FROM CRSP.", df[1, i], " WHERE GVKEY IN ('", paste0(gvkey[, 1], collapse="', '"), "')")
+        sql <- paste0("SELECT * FROM CRSP.", table)
+        if (length(gvkeys)) {
+            sql <- paste0(sql, " WHERE GVKEY IN ('", paste0(gvkeys, collapse="', '"), "')")
+        }
+        message(paste("Querying WRDS for", table, "data"))
         res <- DBI::dbSendQuery(conn, sql)
         while(TRUE) {
             message(paste("...", as.integer(j * batchSize)))
-            data <- fetch(res, n=batchSize)
+            data <- tryCatch({
+                data <- fetch(res, n=batchSize)
+            }, error = function(e) {
+                warning(paste("An exception was thrown:", e))
+                return(data.frame())
+            })
+
             if (nrow(data) == 0) break;
 
-            DBI::dbWriteTable(localdb, cols[i], data, append=TRUE)
+            DBI::dbWriteTable(localdb, table, data, append=TRUE)
             j = j + 1
         }
 
         DBI::dbClearResult(res)
     }
 }
+
+#' Collect GVKEYs of S&P500 constituents
+#' As parameters you can give it the period of which you want to get the
+#' S&P500 constituents. When a parameter is given, both are needed.
+#' @param start Start date of the period (inclusive)
+#' @param end End date of the period (inclusive)
+wrdsGetSP500Gvkeys <- function(start=NA, end=NA) {
+    localdb <- .wrdsGetDb()
+
+    filter <- NA
+    if (!is.na(start) && !is.na(end)) {
+        filter <- .dateFilter(localdb, start, end, "sp.start", "sp.ending")
+    }
+
+    sql <- "SELECT DISTINCT GVKEY FROM CCMXPF_LNKHIST l INNER JOIN MSP500LIST sp ON l.LPERMNO=sp.PERMNO"
+    if (!is.na(filter)) sql <- paste(sql, "WHERE", filter)
+
+    res <- DBI::dbSendQuery(localdb, sql)
+    gvkeys <- fetch(res, n=-1)
+
+    gvkeys[, 1]
+}
+
